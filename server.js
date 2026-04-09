@@ -195,41 +195,66 @@ app.get('/api/download', (req, res) => {
     return res.status(500).json({ error: 'Download process failed to start' });
   }
 
-  ytDlp.on('error', (err) => {
-    console.error('yt-dlp async spawn error:', err);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Download process failed to start internally' });
+  let hasSentHeaders = false;
+  let errorLog = '';
+
+  ytDlp.stdout.on('data', (chunk) => {
+    if (!hasSentHeaders) {
+      if (!res.headersSent) {
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('X-Filename', encodeURIComponent(filename));
+      }
+      hasSentHeaders = true;
+    }
+    res.write(chunk);
+  });
+
+  ytDlp.stdout.on('end', () => {
+    if (hasSentHeaders) {
+      res.end();
     }
   });
 
-  // Wait a tiny bit (100ms) to ensure the process didn't instantly exit (e.g., due to permissions)
-  setTimeout(() => {
-    if (ytDlp.exitCode !== null) return; // Process died instantly
-    
-    if (!res.headersSent) {
-      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('X-Filename', encodeURIComponent(filename));
-      ytDlp.stdout.pipe(res);
-    }
-  }, 100);
-
   ytDlp.stderr.on('data', (data) => {
     const line = data.toString().trim();
-    if (line) console.log(`[yt-dlp] ${line}`);
+    if (line) {
+      console.log(`[yt-dlp] ${line}`);
+      if (line.toLowerCase().includes('error')) {
+        errorLog += line + ' ';
+      }
+    }
+  });
+
+  ytDlp.on('error', (err) => {
+    console.error('yt-dlp async spawn error:', err);
+    if (!hasSentHeaders && !res.headersSent) {
+      res.status(500).json({ error: 'Process error: ' + err.message });
+      hasSentHeaders = true;
+    }
   });
 
   ytDlp.on('close', (code) => {
     if (code !== 0) {
       console.warn(`yt-dlp exited with code ${code}`);
+      if (!hasSentHeaders && !res.headersSent) {
+        const errorMsg = errorLog ? errorLog : 'YouTube rejected the request or stream failed.';
+        res.status(500).json({ error: errorMsg });
+        hasSentHeaders = true;
+      }
     } else {
       console.log(`✅  Done: ${filename}`);
+      if (!hasSentHeaders && !res.headersSent) {
+        res.end();
+      }
     }
   });
 
   // Kill yt-dlp if client disconnects
   req.on('close', () => {
-    ytDlp.kill('SIGTERM');
+    if (ytDlp.pid && ytDlp.exitCode === null) {
+      ytDlp.kill('SIGTERM');
+    }
   });
 });
 
