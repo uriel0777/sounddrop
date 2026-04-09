@@ -67,6 +67,17 @@ async function ensureYtDlp() {
   console.log('✅  yt-dlp downloaded successfully');
 }
 
+// ─── Setup Cookies (Bypass Bot Block on Vercel/Railway) ──────────────────────
+const cookiesPath = path.join(__dirname, 'cookies.txt');
+if (process.env.YT_COOKIES) {
+  fs.writeFileSync(cookiesPath, process.env.YT_COOKIES);
+  console.log('🍪  YouTube cookies written from environment variable');
+} else if (fs.existsSync(cookiesPath)) {
+  console.log('🍪  Local cookies.txt file found');
+} else {
+  console.log('⚠️  No YT_COOKIES environment variable or cookies.txt found. Downloading might be blocked by YouTube.');
+}
+
 // ─── Utility: format seconds → mm:ss or h:mm:ss ──────────────────────────────
 function formatDuration(seconds) {
   if (!seconds || isNaN(seconds)) return '—';
@@ -169,8 +180,6 @@ app.get('/api/download', (req, res) => {
       '--audio-quality', '0',
       '--ffmpeg-location', ffmpegDir,
       '--no-playlist',
-      '-o', '-',
-      videoUrl,
     ];
   } else {
     filename = `${safeTitle}.mp4`;
@@ -180,10 +189,14 @@ app.get('/api/download', (req, res) => {
       '--merge-output-format', 'mp4',
       '--ffmpeg-location', ffmpegDir,
       '--no-playlist',
-      '-o', '-',
-      videoUrl,
     ];
   }
+
+  if (fs.existsSync(cookiesPath)) {
+    args.push('--cookies', cookiesPath);
+  }
+
+  args.push('-o', '-', videoUrl);
 
   console.log(`⬇️  Downloading [${format.toUpperCase()}]: ${safeTitle}`);
 
