@@ -67,16 +67,10 @@ async function ensureYtDlp() {
   console.log('✅  yt-dlp downloaded successfully');
 }
 
-// ─── Setup Cookies (Bypass Bot Block on Vercel/Railway) ──────────────────────
+// ─── Setup Cookies ───────────────────────────────────────────────────────────
+// We previously used cookies to bypass 429 errors, but it triggers PoToken JS errors.
+// Now using native ios/android fallback clients (bypasses bot checks anonymously).
 const cookiesPath = path.join(__dirname, 'cookies.txt');
-if (process.env.YT_COOKIES) {
-  fs.writeFileSync(cookiesPath, process.env.YT_COOKIES);
-  console.log('🍪  YouTube cookies written from environment variable');
-} else if (fs.existsSync(cookiesPath)) {
-  console.log('🍪  Local cookies.txt file found');
-} else {
-  console.log('⚠️  No YT_COOKIES environment variable or cookies.txt found. Downloading might be blocked by YouTube.');
-}
 
 // ─── Utility: format seconds → mm:ss or h:mm:ss ──────────────────────────────
 function formatDuration(seconds) {
@@ -171,31 +165,24 @@ app.get('/api/download', (req, res) => {
   let filename;
   let contentType;
 
-  if (format === 'mp3') {
-    filename = `${safeTitle}.mp3`;
-    contentType = 'audio/mpeg';
     args = [
       '-x',
       '--audio-format', 'mp3',
       '--audio-quality', '0',
       '--ffmpeg-location', ffmpegDir,
       '--no-playlist',
-      '--js-runtimes', 'nodejs',
+      '--extractor-args', 'youtube:player_client=ios,android',
     ];
   } else {
     filename = `${safeTitle}.mp4`;
     contentType = 'video/mp4';
     args = [
-      '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+      '-f', 'b', // 'b' (best pre-merged) strictly falls back to format 18, which bypasses PoToken on ios/android
       '--merge-output-format', 'mp4',
       '--ffmpeg-location', ffmpegDir,
       '--no-playlist',
-      '--js-runtimes', 'nodejs',
+      '--extractor-args', 'youtube:player_client=ios,android',
     ];
-  }
-
-  if (fs.existsSync(cookiesPath)) {
-    args.push('--cookies', cookiesPath);
   }
 
   args.push('-o', '-', videoUrl);
