@@ -62,7 +62,7 @@ async function ensureYtDlp() {
   await downloadFileTo(url, ytDlpPath);
   
   if (!isWindows) {
-    fs.chmodSync(ytDlpPath, '755'); // Make executable on Linux
+    fs.chmodSync(ytDlpPath, 0o755); // Make executable on Linux
   }
   console.log('✅  yt-dlp downloaded successfully');
 }
@@ -187,24 +187,36 @@ app.get('/api/download', (req, res) => {
 
   console.log(`⬇️  Downloading [${format.toUpperCase()}]: ${safeTitle}`);
 
-  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
-  res.setHeader('Content-Type', contentType);
-  res.setHeader('X-Filename', encodeURIComponent(filename));
+  let ytDlp;
+  try {
+    ytDlp = spawn(ytDlpPath, args);
+  } catch (startErr) {
+    console.error('yt-dlp sync spawn error:', startErr);
+    return res.status(500).json({ error: 'Download process failed to start' });
+  }
 
-  const ytDlp = spawn(ytDlpPath, args);
+  ytDlp.on('error', (err) => {
+    console.error('yt-dlp async spawn error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Download process failed to start internally' });
+    }
+  });
 
-  ytDlp.stdout.pipe(res);
+  // Wait a tiny bit (100ms) to ensure the process didn't instantly exit (e.g., due to permissions)
+  setTimeout(() => {
+    if (ytDlp.exitCode !== null) return; // Process died instantly
+    
+    if (!res.headersSent) {
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('X-Filename', encodeURIComponent(filename));
+      ytDlp.stdout.pipe(res);
+    }
+  }, 100);
 
   ytDlp.stderr.on('data', (data) => {
     const line = data.toString().trim();
     if (line) console.log(`[yt-dlp] ${line}`);
-  });
-
-  ytDlp.on('error', (err) => {
-    console.error('yt-dlp spawn error:', err);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Download process failed to start' });
-    }
   });
 
   ytDlp.on('close', (code) => {
