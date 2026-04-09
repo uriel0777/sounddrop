@@ -163,8 +163,9 @@ app.get('/api/download', (req, res) => {
 
   let args;
   let filename;
-  let contentType;
-
+  if (format === 'mp3') {
+    filename = `${safeTitle}.mp3`;
+    contentType = 'audio/mpeg';
     args = [
       '-x',
       '--audio-format', 'mp3',
