@@ -200,7 +200,6 @@ app.get('/api/download', (req, res) => {
       '--audio-quality', '0',
       '--ffmpeg-location', ffmpegDir,
       '--no-playlist',
-      '--extractor-args', 'youtube:player_client=ios,android',
     ];
   } else {
     filename = `${safeTitle}.mp4`;
@@ -210,7 +209,6 @@ app.get('/api/download', (req, res) => {
       '--merge-output-format', 'mp4',
       '--ffmpeg-location', ffmpegDir,
       '--no-playlist',
-      '--extractor-args', 'youtube:player_client=ios,android',
     ];
   }
 
