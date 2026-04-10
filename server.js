@@ -205,7 +205,7 @@ app.get('/api/download', (req, res) => {
     filename = `${safeTitle}.mp4`;
     contentType = 'video/mp4';
     args = [
-      '-f', 'b',
+      '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       '--merge-output-format', 'mp4',
       '--ffmpeg-location', ffmpegDir,
       '--no-playlist',
