@@ -68,9 +68,31 @@ async function ensureYtDlp() {
 }
 
 // ─── Setup Cookies ───────────────────────────────────────────────────────────
-// We previously used cookies to bypass 429 errors, but it triggers PoToken JS errors.
-// Now using native ios/android fallback clients (bypasses bot checks anonymously).
+// YouTube blocks datacenter IPs (Railway, Render, etc.) with "Sign in to confirm
+// you're not a bot". Providing cookies from a real browser session bypasses this.
+// The cookie content is loaded from the YOUTUBE_COOKIES environment variable so
+// it never needs to be committed to the repo.
 const cookiesPath = path.join(__dirname, 'cookies.txt');
+let hasCookies = false;
+
+function ensureCookies() {
+  // Option 1: cookies.txt already exists on disk (local dev)
+  if (fs.existsSync(cookiesPath)) {
+    console.log('🍪  cookies.txt found on disk');
+    hasCookies = true;
+    return;
+  }
+  // Option 2: YOUTUBE_COOKIES env var (Railway / cloud deploy)
+  const envCookies = process.env.YOUTUBE_COOKIES;
+  if (envCookies && envCookies.trim()) {
+    fs.writeFileSync(cookiesPath, envCookies.trim() + '\n', 'utf8');
+    console.log('🍪  cookies.txt created from YOUTUBE_COOKIES env var');
+    hasCookies = true;
+    return;
+  }
+  console.warn('⚠️  No YouTube cookies found. Downloads may fail on cloud/datacenter IPs.');
+  console.warn('   Set the YOUTUBE_COOKIES environment variable with Netscape-format cookie content.');
+}
 
 // ─── Utility: format seconds → mm:ss or h:mm:ss ──────────────────────────────
 function formatDuration(seconds) {
@@ -93,8 +115,14 @@ app.get('/api/search', (req, res) => {
     '--flat-playlist',
     '--no-warnings',
     '--skip-download',
-    `ytsearch12:${query}`,
   ];
+
+  // Authenticate with cookies if available
+  if (hasCookies) {
+    args.push('--cookies', cookiesPath);
+  }
+
+  args.push(`ytsearch12:${query}`);
 
   const proc = spawn(ytDlpPath, args);
   let stdout = '';
@@ -178,13 +206,24 @@ app.get('/api/download', (req, res) => {
     filename = `${safeTitle}.mp4`;
     contentType = 'video/mp4';
     args = [
-      '-f', 'b', // 'b' (best pre-merged) strictly falls back to format 18, which bypasses PoToken on ios/android
+      '-f', 'b',
       '--merge-output-format', 'mp4',
       '--ffmpeg-location', ffmpegDir,
       '--no-playlist',
       '--extractor-args', 'youtube:player_client=ios,android',
     ];
   }
+
+  // Authenticate with cookies if available (critical for cloud/datacenter IPs)
+  if (hasCookies) {
+    args.push('--cookies', cookiesPath);
+  }
+
+  // Network stability: reconnect on transient failures
+  args.push(
+    '--downloader-args',
+    'ffmpeg_i:-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+  );
 
   args.push('-o', '-', videoUrl);
 
@@ -271,11 +310,15 @@ async function start() {
     console.error('   and place it next to server.js');
   }
 
+  // Setup YouTube cookies for authentication (env var → file)
+  ensureCookies();
+
   app.listen(PORT, () => {
     console.log('');
     console.log('╔════════════════════════════════════════╗');
-    console.log('║  🎵  YouTube Downloader  •  Running    ║');
+    console.log('║  🎵  SoundDrop  •  Running             ║');
     console.log(`║  ➜  http://localhost:${PORT}             ║`);
+    console.log(`║  🍪  Cookies: ${hasCookies ? 'YES ✅' : 'NO ⚠️ '}                   ║`);
     console.log('╚════════════════════════════════════════╝');
     console.log('');
   });

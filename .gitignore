@@ -1,5 +1,7 @@
 node_modules/
 yt-dlp.exe
 yt-dlp
+yt-dlp_linux
 .env
 .DS_Store
+cookies.txt
